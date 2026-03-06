@@ -1,0 +1,17 @@
+======================================================================
+COMPARISON: Base Case vs. Disrupted Case
+======================================================================
+
+Network-Level Changes:
+----------------------------------------------------------------------
+Nodes: 9 -> 8 (Change: -1)
+Edges: 8 -> 6 (Change: -2)
+Avg Path Length: 2.6667 -> N/A (Graph became disconnected)
+
+Key Observations:
+----------------------------------------------------------------------
+• The network became DISCONNECTED after the disruption
+• This indicates a critical bottleneck was removed
+• Lost 2 supply chain connections
+• Removing a single manufacturing stage disrupted the entire downstream flow
+• This demonstrates how localized inefficiencies can have system-level impacts

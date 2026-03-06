@@ -1,0 +1,22 @@
+======================================================================
+Base Case - Network Metrics
+======================================================================
+
+Node Metrics:
+Node                      In-Degree    Out-Degree   Betweenness 
+----------------------------------------------------------------------
+Wafer Supplier            0            1            0.0000      
+Lens Supplier             0            1            0.0000      
+PCB Supplier              0            1            0.0000      
+Packaging Supplier        0            1            0.0000      
+Component Assembly        4            1            0.2857      
+Optical Calibration       1            1            0.2679      
+Final Testing             1            1            0.2143      
+Distributor               1            1            0.1250      
+OEM Customer              1            0            0.0000      
+
+Network-Level Metrics:
+----------------------------------------------------------------------
+Average Shortest Path Length: 2.6667
+Number of Nodes: 9
+Number of Edges: 8
