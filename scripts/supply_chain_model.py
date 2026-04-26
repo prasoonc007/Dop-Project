@@ -75,6 +75,26 @@ def create_graph():
     # Add edges to the graph
     G.add_edges_from(edges)
     
+    # Add node parameters (deterministic dataset - NO RANDOMNESS)
+    # Manufacturing nodes with specific parameters
+    G.nodes["Component Assembly"]["processing_time_min"] = 10
+    G.nodes["Component Assembly"]["capacity_uph"] = 120
+    G.nodes["Component Assembly"]["defect_rate"] = 0.05
+    
+    G.nodes["Optical Calibration"]["processing_time_min"] = 15
+    G.nodes["Optical Calibration"]["capacity_uph"] = 80
+    G.nodes["Optical Calibration"]["defect_rate"] = 0.08
+    
+    G.nodes["Final Testing"]["processing_time_min"] = 8
+    G.nodes["Final Testing"]["capacity_uph"] = 100
+    G.nodes["Final Testing"]["defect_rate"] = 0.04
+    
+    # All suppliers and downstream nodes with standard parameters
+    for node in suppliers + downstream:
+        G.nodes[node]["processing_time_min"] = 2
+        G.nodes[node]["capacity_uph"] = 200
+        G.nodes[node]["defect_rate"] = 0.01
+    
     return G
 
 # ============================================================================
@@ -444,6 +464,196 @@ def compare_results(base_metrics, disrupted_metrics, output_file):
     print(f"\nComparison saved to: {output_file}")
 
 # ============================================================================
+# SECTION 7: KPI CALCULATIONS
+# ============================================================================
+
+def compute_kpis(G, path):
+    """
+    Computes KPIs for a given path through the supply chain.
+    
+    Parameters:
+        G: NetworkX directed graph with node attributes
+        path: List of node names representing the path
+    
+    Returns:
+        kpis: Dictionary containing Lead Time, Throughput, and Yield
+    """
+    # Lead Time: Sum of processing_time_min across path
+    lead_time = sum(G.nodes[node]["processing_time_min"] for node in path)
+    
+    # Throughput: Minimum capacity_uph across path (bottleneck)
+    throughput = min(G.nodes[node]["capacity_uph"] for node in path)
+    
+    # Yield: Product of (1 - defect_rate) across path
+    yield_value = 1.0
+    for node in path:
+        yield_value *= (1 - G.nodes[node]["defect_rate"])
+    
+    return {
+        "lead_time": lead_time,
+        "throughput": throughput,
+        "yield": yield_value
+    }
+
+def apply_standardization(G):
+    """
+    Applies standardization transformations to manufacturing nodes only.
+    
+    Parameters:
+        G: NetworkX directed graph
+    
+    Returns:
+        G_standardized: New graph with standardized parameters
+    """
+    # Create a copy to avoid modifying the original
+    G_standardized = G.copy()
+    
+    # Define manufacturing nodes
+    manufacturing_nodes = ["Component Assembly", "Optical Calibration", "Final Testing"]
+    
+    # Apply EXACT transformations to manufacturing nodes only
+    for node in manufacturing_nodes:
+        if node in G_standardized.nodes():
+            # processing_time_min × 0.8
+            G_standardized.nodes[node]["processing_time_min"] *= 0.8
+            
+            # defect_rate × 0.7
+            G_standardized.nodes[node]["defect_rate"] *= 0.7
+            
+            # capacity_uph × 1.1
+            G_standardized.nodes[node]["capacity_uph"] *= 1.1
+    
+    return G_standardized
+
+# The ideal scenario represents a theoretical upper bound of system performance
+# under realistic process improvements, not a perfect system.
+# It applies stronger but still achievable improvements to manufacturing stages.
+def apply_ideal_scenario(G):
+    """
+    Applies ideal process improvements to manufacturing nodes only.
+
+    Parameters:
+        G: NetworkX directed graph
+
+    Returns:
+        G_ideal: New graph with ideal manufacturing parameters
+    """
+    # Create a copy to avoid modifying the original graph
+    G_ideal = G.copy()
+
+    # Define manufacturing nodes
+    manufacturing_nodes = ["Component Assembly", "Optical Calibration", "Final Testing"]
+
+    # Apply exact transformations to manufacturing nodes only
+    for node in manufacturing_nodes:
+        if node in G_ideal.nodes():
+            # processing_time_min × 0.7 (30% reduction)
+            G_ideal.nodes[node]["processing_time_min"] *= 0.7
+
+            # defect_rate × 0.5 (50% reduction)
+            G_ideal.nodes[node]["defect_rate"] *= 0.5
+
+            # capacity_uph × 1.2 (20% increase)
+            G_ideal.nodes[node]["capacity_uph"] *= 1.2
+
+    return G_ideal
+
+def plot_kpi_comparison(base_kpis, standardized_kpis, ideal_kpis, filename):
+    """
+    Creates a bar chart comparing KPIs between base, standardized, and ideal cases.
+    
+    Parameters:
+        base_kpis: Dictionary of base case KPIs
+        standardized_kpis: Dictionary of standardized case KPIs
+        ideal_kpis: Dictionary of ideal case KPIs
+        filename: Path where the figure will be saved
+    """
+    # Create figure with 3 subplots
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    # Define colors
+    base_color = '#3498db'
+    standardized_color = '#2ecc71'
+    ideal_color = '#f1c40f'
+    
+    # Plot 1: Lead Time
+    ax1 = axes[0]
+    lead_times = [base_kpis["lead_time"], standardized_kpis["lead_time"], ideal_kpis["lead_time"]]
+    bars1 = ax1.bar(['Base', 'Standardized', 'Ideal'], lead_times, color=[base_color, standardized_color, ideal_color], edgecolor='black', linewidth=1.5)
+    ax1.set_ylabel('Time (minutes)', fontsize=12, fontweight='bold')
+    ax1.set_title('Lead Time', fontsize=14, fontweight='bold')
+    ax1.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars1:
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.1f}',
+                ha='center', va='bottom', fontweight='bold')
+    
+    # Plot 2: Throughput
+    ax2 = axes[1]
+    throughputs = [base_kpis["throughput"], standardized_kpis["throughput"], ideal_kpis["throughput"]]
+    bars2 = ax2.bar(['Base', 'Standardized', 'Ideal'], throughputs, color=[base_color, standardized_color, ideal_color], edgecolor='black', linewidth=1.5)
+    ax2.set_ylabel('Units per Hour', fontsize=12, fontweight='bold')
+    ax2.set_title('Throughput', fontsize=14, fontweight='bold')
+    ax2.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars2:
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.1f}',
+                ha='center', va='bottom', fontweight='bold')
+    
+    # Plot 3: Yield
+    ax3 = axes[2]
+    yields = [base_kpis["yield"] * 100, standardized_kpis["yield"] * 100, ideal_kpis["yield"] * 100]  # Convert to percentage
+    bars3 = ax3.bar(['Base', 'Standardized', 'Ideal'], yields, color=[base_color, standardized_color, ideal_color], edgecolor='black', linewidth=1.5)
+    ax3.set_ylabel('Yield (%)', fontsize=12, fontweight='bold')
+    ax3.set_title('Yield', fontsize=14, fontweight='bold')
+    ax3.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars3:
+        height = bar.get_height()
+        ax3.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.2f}%',
+                ha='center', va='bottom', fontweight='bold')
+    
+    # Overall title
+    fig.suptitle('KPI Comparison: Base vs Standardized vs Ideal', fontsize=16, fontweight='bold', y=1.02)
+    
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"\nKPI comparison graph saved to: {filename}")
+    plt.close()
+
+def save_kpis_to_file(kpis, filename, case_name):
+    """
+    Saves KPI metrics to a text file.
+    
+    Parameters:
+        kpis: Dictionary containing KPI values
+        filename: Path where the metrics will be saved
+        case_name: Name of the case (e.g., "Base Case")
+    """
+    with open(filename, 'w') as f:
+        f.write("="*70 + "\n")
+        f.write(f"{case_name} - KPI Metrics\n")
+        f.write("="*70 + "\n\n")
+        
+        f.write("Key Performance Indicators:\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"Lead Time:    {kpis['lead_time']:.2f} minutes\n")
+        f.write(f"Throughput:   {kpis['throughput']:.2f} units per hour\n")
+        f.write(f"Yield:        {kpis['yield']*100:.2f}%\n")
+        f.write("-" * 70 + "\n")
+    
+    print(f"KPI metrics saved to: {filename}")
+
+# ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 
@@ -454,8 +664,8 @@ def main():
     print("\n" + "="*70)
     print("OPTOELECTRONICS SUPPLY CHAIN NETWORK ANALYSIS")
     print("="*70)
-    print("\nThis analysis demonstrates how small localized disruptions")
-    print("can create significant system-level impacts in supply chains.")
+    print("\nThis analysis demonstrates how small process improvements")
+    print("can create measurable system-level impacts in supply chains.")
     print("="*70)
     
     # Define output paths
@@ -467,43 +677,125 @@ def main():
     os.makedirs(graphs_dir, exist_ok=True)
     os.makedirs(metrics_dir, exist_ok=True)
     
-    # Step 1: Create base supply chain graph
-    print("\n[Step 1] Creating base supply chain graph...")
+    # Step 1: Create base supply chain graph with node parameters
+    print("\n[Step 1] Creating base supply chain graph with node parameters...")
     G_base = create_graph()
     print(f"Created graph with {G_base.number_of_nodes()} nodes and {G_base.number_of_edges()} edges")
+    print("Node parameters added: processing_time_min, capacity_uph, defect_rate")
     
     # Step 2: Visualize base network
     print("\n[Step 2] Visualizing base supply chain network...")
-    base_graph_path = os.path.join(graphs_dir, 'base_supply_chain_network.png')
+    base_graph_path = os.path.join(graphs_dir, 'base_network.png')
     plot_graph(G_base, base_graph_path, "Base Supply Chain Network")
     
-    # Step 3: Compute base case metrics
-    print("\n[Step 3] Computing base case metrics...")
-    base_metrics = compute_metrics(G_base, "Base Case")
+    # Step 3: Define the main path for KPI calculations
+    print("\n[Step 3] Defining main path for KPI calculations...")
+    main_path = [
+        "Wafer Supplier",
+        "Component Assembly",
+        "Optical Calibration",
+        "Final Testing",
+        "Distributor",
+        "OEM Customer"
+    ]
+    print(f"Main path: {' -> '.join(main_path)}")
     
-    # Save base case metrics
-    base_metrics_path = os.path.join(metrics_dir, 'base_case_metrics.txt')
-    save_metrics_to_file(base_metrics, base_metrics_path, "Base Case")
+    # Step 4: Compute base case KPIs
+    print("\n[Step 4] Computing base case KPIs...")
+    base_kpis = compute_kpis(G_base, main_path)
     
-    # Step 4: Simulate disruption
-    print("\n[Step 4] Simulating supply chain disruption...")
-    node_to_disrupt = "Optical Calibration"
-    G_disrupted = simulate_disruption(G_base, node_to_disrupt)
+    # Print base case KPIs
+    print("\n" + "="*70)
+    print("=== BASE CASE ===")
+    print("="*70)
+    print(f"Lead Time:    {base_kpis['lead_time']:.2f} minutes")
+    print(f"Throughput:   {base_kpis['throughput']:.2f} units per hour")
+    print(f"Yield:        {base_kpis['yield']*100:.2f}%")
+    print("="*70)
     
-    # Step 5: Visualize disrupted network
-    print("\n[Step 5] Visualizing disrupted supply chain network...")
-    disrupted_graph_path = os.path.join(graphs_dir, 'disrupted_supply_chain_network.png')
-    plot_graph(G_disrupted, disrupted_graph_path, 
-              f"Disrupted Supply Chain Network\n(Removed: {node_to_disrupt})")
+    # Save base case KPIs
+    base_kpis_path = os.path.join(metrics_dir, 'base_metrics.txt')
+    save_kpis_to_file(base_kpis, base_kpis_path, "Base Case")
     
-    # Step 6: Compute disrupted case metrics
-    print("\n[Step 6] Computing disrupted case metrics...")
-    disrupted_metrics = compute_metrics(G_disrupted, "Disrupted Case")
+    # Step 5: Apply standardization
+    print("\n[Step 5] Applying standardization to manufacturing nodes...")
+    G_standardized = apply_standardization(G_base)
+    print("Standardization applied:")
+    print("  • processing_time_min × 0.8")
+    print("  • defect_rate × 0.7")
+    print("  • capacity_uph × 1.1")
     
-    # Step 7: Compare results
-    print("\n[Step 7] Comparing base case and disrupted case...")
-    comparison_path = os.path.join(metrics_dir, 'disruption_comparison.txt')
-    compare_results(base_metrics, disrupted_metrics, comparison_path)
+    # Step 6: Compute standardized case KPIs
+    print("\n[Step 6] Computing standardized case KPIs...")
+    standardized_kpis = compute_kpis(G_standardized, main_path)
+    
+    # Print standardized case KPIs
+    print("\n" + "="*70)
+    print("=== STANDARDIZED CASE ===")
+    print("="*70)
+    print(f"Lead Time:    {standardized_kpis['lead_time']:.2f} minutes")
+    print(f"Throughput:   {standardized_kpis['throughput']:.2f} units per hour")
+    print(f"Yield:        {standardized_kpis['yield']*100:.2f}%")
+    print("="*70)
+    
+    # Save standardized case KPIs
+    standardized_kpis_path = os.path.join(metrics_dir, 'standardized_metrics.txt')
+    save_kpis_to_file(standardized_kpis, standardized_kpis_path, "Standardized Case")
+    
+    # Step 7: Apply ideal scenario
+    print("\n[Step 7] Applying ideal scenario improvements to manufacturing nodes...")
+    G_ideal = apply_ideal_scenario(G_base)
+    print("Ideal scenario applied: ")
+    print("  • processing_time_min × 0.7")
+    print("  • defect_rate × 0.5")
+    print("  • capacity_uph × 1.2")
+    
+    # Step 8: Compute ideal case KPIs
+    print("\n[Step 8] Computing ideal case KPIs...")
+    ideal_kpis = compute_kpis(G_ideal, main_path)
+    
+    # Print ideal case KPIs
+    print("\n" + "="*70)
+    print("=== IDEAL CASE ===")
+    print("="*70)
+    print(f"Lead Time:    {ideal_kpis['lead_time']:.2f} minutes")
+    print(f"Throughput:   {ideal_kpis['throughput']:.2f} units per hour")
+    print(f"Yield:        {ideal_kpis['yield']*100:.2f}%")
+    print("="*70)
+    
+    # Save ideal case KPIs
+    ideal_kpis_path = os.path.join(metrics_dir, 'ideal_metrics.txt')
+    save_kpis_to_file(ideal_kpis, ideal_kpis_path, "Ideal Case")
+    
+    # Step 9: Calculate and print improvements
+    print("\n[Step 9] Calculating improvements...")
+    print("\n" + "="*70)
+    print("=== IMPROVEMENTS ===")
+    print("="*70)
+    
+    # Lead time improvements (reductions are positive)
+    std_lead_time_improvement = ((base_kpis['lead_time'] - standardized_kpis['lead_time']) / base_kpis['lead_time']) * 100
+    ideal_lead_time_improvement = ((base_kpis['lead_time'] - ideal_kpis['lead_time']) / base_kpis['lead_time']) * 100
+    print(f"Lead Time Improvement (Base → Standardized): {std_lead_time_improvement:.2f}%")
+    print(f"Lead Time Improvement (Base → Ideal):         {ideal_lead_time_improvement:.2f}%")
+    
+    # Throughput improvements (increases are positive)
+    std_throughput_improvement = ((standardized_kpis['throughput'] - base_kpis['throughput']) / base_kpis['throughput']) * 100
+    ideal_throughput_improvement = ((ideal_kpis['throughput'] - base_kpis['throughput']) / base_kpis['throughput']) * 100
+    print(f"Throughput Improvement (Base → Standardized): {std_throughput_improvement:.2f}%")
+    print(f"Throughput Improvement (Base → Ideal):         {ideal_throughput_improvement:.2f}%")
+    
+    # Yield improvements (increases are positive)
+    std_yield_improvement = ((standardized_kpis['yield'] - base_kpis['yield']) / base_kpis['yield']) * 100
+    ideal_yield_improvement = ((ideal_kpis['yield'] - base_kpis['yield']) / base_kpis['yield']) * 100
+    print(f"Yield Improvement (Base → Standardized):      {std_yield_improvement:.2f}%")
+    print(f"Yield Improvement (Base → Ideal):             {ideal_yield_improvement:.2f}%")
+    print("="*70)
+    
+    # Step 10: Create KPI comparison visualization
+    print("\n[Step 10] Creating KPI comparison visualization...")
+    kpi_comparison_path = os.path.join(graphs_dir, 'kpi_comparison.png')
+    plot_kpi_comparison(base_kpis, standardized_kpis, ideal_kpis, kpi_comparison_path)
     
     # Summary
     print("\n" + "="*70)
@@ -511,11 +803,15 @@ def main():
     print("="*70)
     print("\nGenerated outputs:")
     print(f"  • {base_graph_path}")
-    print(f"  • {disrupted_graph_path}")
-    print(f"  • {base_metrics_path}")
-    print(f"  • {comparison_path}")
-    print("\nThese files can be used in your academic report to demonstrate")
-    print("the impact of localized disruptions on supply chain performance.")
+    print(f"  • {base_kpis_path}")
+    print(f"  • {standardized_kpis_path}")
+    print(f"  • {ideal_kpis_path}")
+    print(f"  • {kpi_comparison_path}")
+    print("\nKey Findings:")
+    print("  • Small process improvements create measurable system-level impact")
+    print("  • Standardization reduces lead time and defects")
+    print("  • Increased capacity improves throughput")
+    print("  • Overall yield improvement demonstrates supply chain optimization")
     print("="*70 + "\n")
 
 # Run the analysis
